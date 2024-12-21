@@ -1,6 +1,5 @@
 streamlit
 pandas 
-io
 google-generativeai
 langchain
 langchain_community
