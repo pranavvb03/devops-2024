@@ -1,4 +1,5 @@
 import streamlit as st
+import atexit
 import pandas as pd
 import re
 import sqlite3
