@@ -26,12 +26,14 @@ genai.configure(api_key=GOOGLE_API_KEY)
 
 def create_db_from_csv(csv_file) -> str:
     """Create SQLite database from uploaded CSV file"""
-    # Create a temporary file
     temp_db = tempfile.NamedTemporaryFile(delete=False, suffix='.db')
     db_path = temp_db.name
     
     # Read CSV file
     df = pd.read_csv(csv_file)
+    
+    # Clean column names: remove spaces and special characters
+    df.columns = [col.strip().replace(' ', '_') for col in df.columns]
     
     # Create SQLite connection
     conn = sqlite3.connect(db_path)
@@ -43,27 +45,71 @@ def create_db_from_csv(csv_file) -> str:
     conn.close()
     return db_path
 
-def get_table_schema(db_path: str) -> str:
-    """Get schema information from SQLite database"""
+def get_table_info(db_path: str) -> str:
+    """Get comprehensive table information including schema, column stats, and row count"""
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
-    # Get table info
-    cursor.execute("SELECT sql FROM sqlite_master WHERE type='table';")
-    schema = cursor.fetchall()
+    # Get table schema
+    cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='data_table';")
+    schema = cursor.fetchone()[0]
+    
+    # Get column names
+    cursor.execute("PRAGMA table_info(data_table);")
+    columns = cursor.fetchall()
+    
+    # Get row count
+    cursor.execute("SELECT COUNT(*) FROM data_table;")
+    row_count = cursor.fetchone()[0]
+    
+    # Get basic stats for each column
+    stats = []
+    for col in columns:
+        col_name = col[1]
+        cursor.execute(f"SELECT COUNT(DISTINCT {col_name}) FROM data_table;")
+        distinct_count = cursor.fetchone()[0]
+        stats.append(f"Column '{col_name}': {distinct_count} distinct values")
+    
+    # Get value distributions for categorical columns
+    categorical_stats = []
+    for col in columns:
+        col_name = col[1]
+        cursor.execute(f"""
+            SELECT {col_name}, COUNT(*) as count 
+            FROM data_table 
+            GROUP BY {col_name} 
+            ORDER BY count DESC
+        """)
+        distribution = cursor.fetchall()
+        if len(distribution) < 50:  # Only include if it's a reasonable number of categories
+            dist_str = [f"{val}: {count}" for val, count in distribution]
+            categorical_stats.append(f"Distribution for {col_name}:\n" + "\n".join(dist_str))
     
     conn.close()
-    return '\n'.join([s[0] for s in schema if s[0] is not None])
-
-def create_vector_store(schema: str, embeddings):
-    """Create FAISS vector store from schema information"""
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200
-    )
-    texts = text_splitter.split_text(schema)
     
-    return FAISS.from_texts(texts, embeddings)
+    # Combine all information
+    table_info = f"""
+    Table Schema:
+    {schema}
+    
+    Total Rows: {row_count}
+    
+    Column Statistics:
+    {'\n'.join(stats)}
+    
+    Value Distributions:
+    {'\n'.join(categorical_stats)}
+    """
+    
+    return table_info
+
+def clean_sql_query(query: str) -> str:
+    """Clean and extract SQL query from the model's response"""
+    # Remove any markdown formatting
+    query = re.sub(r'```sql|```', '', query)
+    # Remove any trailing semicolons and extra whitespace
+    query = query.strip().rstrip(';')
+    return query
 
 def execute_sql_query(db_path: str, query: str) -> pd.DataFrame:
     """Execute SQL query and return results as DataFrame"""
@@ -76,6 +122,15 @@ def execute_sql_query(db_path: str, query: str) -> pd.DataFrame:
         conn.close()
         raise e
 
+def create_vector_store(schema: str, embeddings):
+    """Create FAISS vector store from schema information"""
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,
+        chunk_overlap=200
+    )
+    texts = text_splitter.split_text(schema)
+    return FAISS.from_texts(texts, embeddings)
+
 # Create Streamlit interface
 st.title("Interactive SQL Chatbot with RAG")
 st.write("Upload a CSV file to create a database and ask questions in natural language!")
@@ -87,26 +142,31 @@ if uploaded_file is not None and st.session_state.db_path is None:
     # Create database from uploaded file
     st.session_state.db_path = create_db_from_csv(uploaded_file)
     
-    # Get schema information
-    schema = get_table_schema(st.session_state.db_path)
+    # Get comprehensive table information
+    table_info = get_table_info(st.session_state.db_path)
     
     # Create embeddings and vector store
     embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-    st.session_state.vector_store = create_vector_store(schema, embeddings)
+    st.session_state.vector_store = create_vector_store(table_info, embeddings)
     
     st.success("Database created successfully!")
+    st.write("Database Statistics:", table_info)
 
 if st.session_state.db_path:
     # Initialize chat model
-    chat_model = ChatGoogleGenerativeAI(model="gemini-1.5-pro", temperature=0.3)
+    chat_model = ChatGoogleGenerativeAI(model="gemini-pro", temperature=0.3)
     
     # Create prompt template
     prompt_template = """
-    You are a SQL expert. Given the following question and database schema context, generate a MySQL-compatible SQL query.
-    Only return the SQL query without any explanations.
+    You are a SQL expert. Given the following database information and question, generate a SQL query.
+    The database contains the complete dataset, not just a sample.
+    Return only the SQL query without any markdown formatting, explanations, or decorations.
+    Make sure column names match exactly with the schema.
     
-    Context: {context}
-    Question: {question}
+    Database Information:
+    {context}
+    
+    User Question: {question}
     
     SQL Query:
     """
@@ -132,15 +192,18 @@ if st.session_state.db_path:
             # Generate SQL query
             sql_query = chain.run(context=context, question=question)
             
+            # Clean the SQL query
+            cleaned_query = clean_sql_query(sql_query)
+            
             # Execute query
-            results = execute_sql_query(st.session_state.db_path, sql_query)
+            results = execute_sql_query(st.session_state.db_path, cleaned_query)
             
             # Add response to chat history
-            response = f"SQL Query:\n```sql\n{sql_query}\n```\n\nResults:\n{results.to_markdown()}"
+            response = f"SQL Query:\n```sql\n{cleaned_query}\n```\n\nResults:\n{results.to_markdown()}"
             st.session_state.messages.append({"role": "assistant", "content": response})
             
         except Exception as e:
-            error_message = f"Error executing query: {str(e)}"
+            error_message = f"Error executing query: {str(e)}\nQuery attempted: {sql_query}"
             st.session_state.messages.append({"role": "assistant", "content": error_message})
     
     # Display chat history
