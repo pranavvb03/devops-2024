@@ -15,18 +15,42 @@ from typing import List
 import tempfile
 
 # Initialize session state
-if 'messages' not in st.session_state:
-    st.session_state.messages = []
-if 'db_path' not in st.session_state:
-    st.session_state.db_path = None
-if 'vector_store' not in st.session_state:
-    st.session_state.vector_store = None
-if 'table_info' not in st.session_state:
-    st.session_state.table_info = None
+# if 'messages' not in st.session_state:
+#     st.session_state.messages = []
+# if 'db_path' not in st.session_state:
+#     st.session_state.db_path = None
+# if 'vector_store' not in st.session_state:
+#     st.session_state.vector_store = None
+# if 'table_info' not in st.session_state:
+#     st.session_state.table_info = None
+for key in ['messages', 'db_path', 'vector_store', 'table_info', 'chat_history', 'current_chat']:
+    if key not in st.session_state:
+        st.session_state[key] = [] if key in ['messages', 'chat_history'] else None
+
 
 # Set your Google API key
 GOOGLE_API_KEY = st.secrets['GOOGLE_API_KEY']
 genai.configure(api_key=GOOGLE_API_KEY)
+
+def save_chat_history():
+    """Save current chat to history"""
+    if st.session_state.messages:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        chat = {
+            'timestamp': timestamp,
+            'messages': st.session_state.messages,
+            'table_info': st.session_state.table_info
+        }
+        st.session_state.chat_history.append(chat)
+
+def load_chat(chat):
+    """Load selected chat"""
+    st.session_state.messages = chat['messages']
+    st.session_state.table_info = chat['table_info']
+
+def clear_chat():
+    """Clear current chat"""
+    st.session_state.messages = []
 
 def create_db_from_csv(csv_file) -> str:
     """Create SQLite database from uploaded CSV file"""
@@ -116,86 +140,185 @@ def create_vector_store(text: str, embeddings) -> FAISS:
 st.title("Interactive SQL Chatbot with RAG")
 st.write("Upload a CSV file to create a database and ask questions in natural language!")
 
-# File upload
-uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
+st.set_page_config(layout="wide")
 
-if uploaded_file is not None and st.session_state.db_path is None:
-    # Create database from uploaded file
-    st.session_state.db_path = create_db_from_csv(uploaded_file)
+# Sidebar for navigation
+with st.sidebar:
+    st.title("Navigation")
+    menu_choice = st.radio("Menu", ["New Chat", "Chat History", "About"])
     
-    # Get comprehensive table information
-    st.session_state.table_info = get_table_info(st.session_state.db_path)
-    
-    # Create embeddings and vector store
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-    st.session_state.vector_store = create_vector_store(st.session_state.table_info, embeddings)
-    
-    st.success("Database created successfully!")
-
-if st.session_state.db_path:
-    # Initialize chat model
-    chat_model = ChatGoogleGenerativeAI(model="gemini-pro", temperature=0.3)
-    
-    # Create prompt template
-    prompt_template = """
-    You are a SQL expert. Generate a SQL query based on the following database information and question.
-    Return ONLY the SQL query without any explanations or decorations.
-    If you cannot generate a valid query, respond with "I cannot answer this question with the available data."
-    
-    Database Information:
-    {context}
-    
-    User Question: {question}
-    
-    Response:
-    """
-    
-    prompt = PromptTemplate(
-        input_variables=["context", "question"],
-        template=prompt_template
-    )
-    
-    # Create chain
-    chain = LLMChain(llm=chat_model, prompt=prompt)
-    
-    # Chat interface
-    if question := st.chat_input("Ask any question about your data"):
-        # Add user message to chat history
-        st.session_state.messages.append({"role": "user", "content": question})
+    if menu_choice == "Chat History":
+        st.subheader("Previous Chats")
+        for idx, chat in enumerate(st.session_state.chat_history):
+            if st.button(f"Chat {idx + 1} - {chat['timestamp']}"):
+                load_chat(chat)
         
-        try:
-            # Get relevant context from vector store
-            docs = st.session_state.vector_store.similarity_search(question)
-            context = "\n".join([doc.page_content for doc in docs])
-            
-            # Generate SQL query
-            sql_response = chain.run(context=context, question=question)
-            
-            # Check if the response indicates inability to answer
-            if "cannot answer" in sql_response.lower():
-                st.session_state.messages.append({"role": "assistant", "content": sql_response})
-            else:
-                # Clean and execute the query
-                cleaned_query = clean_sql_query(sql_response)
-                results = execute_sql_query(st.session_state.db_path, cleaned_query)
-                
-                # Format response
-                response = f"SQL Query:\n```sql\n{cleaned_query}\n```\n\nResults:\n{results.to_markdown()}"
-                st.session_state.messages.append({"role": "assistant", "content": response})
-            
-        except Exception as e:
-            error_message = f"Error: {str(e)}\nPlease try rephrasing your question."
-            st.session_state.messages.append({"role": "assistant", "content": error_message})
+        if st.button("Clear All History"):
+            st.session_state.chat_history = []
     
-    # Display chat history
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+    elif menu_choice == "About":
+        st.markdown("""
+        ### Text-to-SQL Chatbot
+        - Upload CSV files
+        - Ask questions in natural language
+        - Get SQL queries and results
+        - Maintains chat history
+        """)
 
-# Cleanup on session end
+# Main content area
+if menu_choice == "New Chat" or menu_choice == "Chat History":
+    st.title("SQL Chatbot")
+    
+    # File upload
+    uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
+    
+    if uploaded_file is not None and st.session_state.db_path is None:
+        st.session_state.db_path = create_db_from_csv(uploaded_file)
+        st.session_state.table_info = get_table_info(st.session_state.db_path)
+        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+        st.session_state.vector_store = create_vector_store(st.session_state.table_info, embeddings)
+        st.success("Database created!")
+
+    if st.session_state.db_path:
+        chat_model = ChatGoogleGenerativeAI(model="gemini-pro", temperature=0.3)
+        
+        prompt = PromptTemplate(
+            input_variables=["context", "question"],
+            template="""
+            You are a SQL expert. Generate a SQL query based on the following database information and question.
+            Return ONLY the SQL query without any explanations or decorations.
+            If you cannot generate a valid query, respond with "I cannot answer this question with the available data."
+            
+            Database Information:
+            {context}
+            
+            User Question: {question}
+            
+            Response:
+            """
+        )
+        
+        chain = LLMChain(llm=chat_model, prompt=prompt)
+        
+        # Chat interface with history management
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            if question := st.chat_input("Ask a question"):
+                st.session_state.messages.append({"role": "user", "content": question})
+                
+                try:
+                    docs = st.session_state.vector_store.similarity_search(question)
+                    context = "\n".join([doc.page_content for doc in docs])
+                    sql_response = chain.run(context=context, question=question)
+                    
+                    if "cannot answer" in sql_response.lower():
+                        st.session_state.messages.append({"role": "assistant", "content": sql_response})
+                    else:
+                        cleaned_query = clean_sql_query(sql_response)
+                        results = execute_sql_query(st.session_state.db_path, cleaned_query)
+                        response = f"SQL Query:\n```sql\n{cleaned_query}\n```\n\nResults:\n{results.to_markdown()}"
+                        st.session_state.messages.append({"role": "assistant", "content": response})
+                        save_chat_history()
+                        
+                except Exception as e:
+                    st.session_state.messages.append({"role": "assistant", "content": f"Error: {str(e)}"})
+        
+        with col2:
+            if st.button("Clear Chat"):
+                clear_chat()
+        
+        # Display chat
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+
+# Cleanup
 def cleanup():
     if st.session_state.db_path and os.path.exists(st.session_state.db_path):
         os.unlink(st.session_state.db_path)
 
-# Register cleanup
 atexit.register(cleanup)
+
+# # File upload
+# uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
+
+# if uploaded_file is not None and st.session_state.db_path is None:
+#     # Create database from uploaded file
+#     st.session_state.db_path = create_db_from_csv(uploaded_file)
+    
+#     # Get comprehensive table information
+#     st.session_state.table_info = get_table_info(st.session_state.db_path)
+    
+#     # Create embeddings and vector store
+#     embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+#     st.session_state.vector_store = create_vector_store(st.session_state.table_info, embeddings)
+    
+#     st.success("Database created successfully!")
+
+# if st.session_state.db_path:
+#     # Initialize chat model
+#     chat_model = ChatGoogleGenerativeAI(model="gemini-pro", temperature=0.3)
+    
+#     # Create prompt template
+#     prompt_template = """
+#     You are a SQL expert. Generate a SQL query based on the following database information and question.
+#     Return ONLY the SQL query without any explanations or decorations.
+#     If you cannot generate a valid query, respond with "I cannot answer this question with the available data."
+    
+#     Database Information:
+#     {context}
+    
+#     User Question: {question}
+    
+#     Response:
+#     """
+    
+#     prompt = PromptTemplate(
+#         input_variables=["context", "question"],
+#         template=prompt_template
+#     )
+    
+#     # Create chain
+#     chain = LLMChain(llm=chat_model, prompt=prompt)
+    
+#     # Chat interface
+#     if question := st.chat_input("Ask any question about your data"):
+#         # Add user message to chat history
+#         st.session_state.messages.append({"role": "user", "content": question})
+        
+#         try:
+#             # Get relevant context from vector store
+#             docs = st.session_state.vector_store.similarity_search(question)
+#             context = "\n".join([doc.page_content for doc in docs])
+            
+#             # Generate SQL query
+#             sql_response = chain.run(context=context, question=question)
+            
+#             # Check if the response indicates inability to answer
+#             if "cannot answer" in sql_response.lower():
+#                 st.session_state.messages.append({"role": "assistant", "content": sql_response})
+#             else:
+#                 # Clean and execute the query
+#                 cleaned_query = clean_sql_query(sql_response)
+#                 results = execute_sql_query(st.session_state.db_path, cleaned_query)
+                
+#                 # Format response
+#                 response = f"SQL Query:\n```sql\n{cleaned_query}\n```\n\nResults:\n{results.to_markdown()}"
+#                 st.session_state.messages.append({"role": "assistant", "content": response})
+            
+#         except Exception as e:
+#             error_message = f"Error: {str(e)}\nPlease try rephrasing your question."
+#             st.session_state.messages.append({"role": "assistant", "content": error_message})
+    
+#     # Display chat history
+#     for message in st.session_state.messages:
+#         with st.chat_message(message["role"]):
+#             st.markdown(message["content"])
+
+# # Cleanup on session end
+# def cleanup():
+#     if st.session_state.db_path and os.path.exists(st.session_state.db_path):
+#         os.unlink(st.session_state.db_path)
+
+# # Register cleanup
+# atexit.register(cleanup)
