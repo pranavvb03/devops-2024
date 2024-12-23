@@ -1,4 +1,5 @@
 import streamlit as st
+st.set_page_config(layout="wide")
 import atexit
 import pandas as pd
 import re
@@ -12,6 +13,7 @@ from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 import google.generativeai as genai
 from typing import List
+from datetime import datetime
 import tempfile
 
 # Initialize session state
@@ -140,7 +142,6 @@ def create_vector_store(text: str, embeddings) -> FAISS:
 st.title("Interactive SQL Chatbot with RAG")
 st.write("Upload a CSV file to create a database and ask questions in natural language!")
 
-st.set_page_config(layout="wide")
 
 # Sidebar for navigation
 with st.sidebar:
