@@ -341,7 +341,7 @@ if menu_choice == "New Chat" or menu_choice == "Chat History":
                                         "data": results.to_dict('records')
                                     }
                                 })
-                           else:
+                            else:
                                 response = f"SQL Query:\n```sql\n{cleaned_query}\n```\n\nResults:\n{results.to_markdown()}\n\nCouldn't create visualization: {error}"
                                 st.session_state.messages.append({"role": "assistant", "content": response})
                         else:
