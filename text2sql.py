@@ -329,7 +329,7 @@ if menu_choice == "New Chat" or menu_choice == "Chat History":
                             fig, error = create_chart(results, chart_type)
                             
                             if fig:
-                                response = f"SQL Query:\nsql\n{cleaned_query}\n\n\nResults:\n{results.to_markdown()}\n\n"
+                                response = f"SQL Query:\n```sql\n{cleaned_query}\n```\n\nResults:\n{results.to_markdown()}\n\n"
                                 st.session_state.messages.append({"role": "assistant", "content": response})
                                 
                                 # Store chart information in the message
@@ -341,11 +341,11 @@ if menu_choice == "New Chat" or menu_choice == "Chat History":
                                         "data": results.to_dict('records')
                                     }
                                 })
-                            else:
-                                response = f"SQL Query:\nsql\n{cleaned_query}\n\n\nResults:\n{results.to_markdown()}\n\nCouldn't create visualization: {error}"
+                           else:
+                                response = f"SQL Query:\n```sql\n{cleaned_query}\n```\n\nResults:\n{results.to_markdown()}\n\nCouldn't create visualization: {error}"
                                 st.session_state.messages.append({"role": "assistant", "content": response})
                         else:
-                            response = f"SQL Query:\nsql\n{cleaned_query}\n\n\nResults:\n{results.to_markdown()}"
+                            response = f"SQL Query:\n```sql\n{cleaned_query}\n```\n\nResults:\n{results.to_markdown()}"
                             st.session_state.messages.append({"role": "assistant", "content": response})
                         
                         save_chat_history()
