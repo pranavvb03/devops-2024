@@ -181,7 +181,7 @@ if menu_choice == "New Chat" or menu_choice == "Chat History":
         st.success("Database created!")
 
     if st.session_state.db_path:
-        chat_model = ChatGoogleGenerativeAI(model="gemini-pro", temperature=0.3)
+        chat_model = ChatGoogleGenerativeAI(model="gemini-2.0-pro-exp-02-05", temperature=0.3)
         
         prompt = PromptTemplate(
             input_variables=["context", "question"],
