@@ -18,15 +18,6 @@ import tempfile
 import plotly.express as px
 import plotly.graph_objects as go
 
-# Initialize session state
-# if 'messages' not in st.session_state:
-#     st.session_state.messages = []
-# if 'db_path' not in st.session_state:
-#     st.session_state.db_path = None
-# if 'vector_store' not in st.session_state:
-#     st.session_state.vector_store = None
-# if 'table_info' not in st.session_state:
-#     st.session_state.table_info = None
 for key in ['messages', 'db_path', 'vector_store', 'table_info', 'chat_history', 'current_chat', 'df_preview']:
     if key not in st.session_state:
         st.session_state[key] = [] if key in ['messages', 'chat_history'] else None
@@ -231,7 +222,7 @@ def identify_chart_type(question):
     return "bar"
 
 # Create Streamlit interface
-st.title("Interactive SQL Chatbot with RAG")
+st.title("Interactive Text2SQL Chatbot")
 st.write("Upload a CSV file to create a database and ask questions in natural language!")
 
 
@@ -274,18 +265,12 @@ if menu_choice == "New Chat" or menu_choice == "Chat History":
         st.session_state.vector_store = create_vector_store(st.session_state.table_info, embeddings)
         st.success("Database created!")
         
-        # Display database preview
+    if st.session_state.df_preview is not None:
         st.subheader("Database Preview")
         st.dataframe(st.session_state.df_preview)
 
-    if st.session_state.db_path:
-        # Display database preview if available but not shown
-        if st.session_state.df_preview is not None and uploaded_file is None:
-            st.subheader("Database Preview")
-            st.dataframe(st.session_state.df_preview)
-            
+    if st.session_state.db_path:           
         chat_model = ChatGoogleGenerativeAI(model="gemini-2.0-pro-exp-02-05", temperature=0.3)
-        
         prompt = PromptTemplate(
             input_variables=["context", "question"],
             template="""
