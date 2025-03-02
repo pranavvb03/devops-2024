@@ -71,8 +71,7 @@ def get_table_info(db_path: str) -> str:
         samples = [str(row[0]) for row in cursor.fetchall()]
         column_info.append(f"Column '{col_name}' (Type: {col_type}, Distinct Values: {distinct_count}, Examples: {', '.join(samples)})")
     conn.close()
-    return f"Table Name: data_table\nTotal Rows: {row_count}\n\nSchema Information:\n{'
-'.join(column_info)}"
+    return f"Table Name: data_table\nTotal Rows: {row_count}\n\nSchema Information:\n{''.join(column_info)}"
 
 def execute_sql_query(db_path: str, query: str) -> pd.DataFrame:
     conn = sqlite3.connect(db_path)
