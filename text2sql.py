@@ -116,10 +116,12 @@ def get_table_info(db_path: str) -> str:
 
 def clean_sql_query(query: str) -> str:
     """Clean and extract SQL query from the model's response"""
-    # Remove markdown formatting
-    query = re.sub(r'sql|', '', query)
+    # Remove markdown code block formatting (backticks)
+    query = re.sub(r'^```sql|^```|```$', '', query, flags=re.MULTILINE)
+    
     # Remove any trailing semicolons and extra whitespace
     query = query.strip().rstrip(';')
+    
     # Add semicolon back for consistency
     return query + ';'
 
