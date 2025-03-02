@@ -270,7 +270,7 @@ if menu_choice == "New Chat" or menu_choice == "Chat History":
         st.dataframe(st.session_state.df_preview)
 
     if st.session_state.db_path:           
-        chat_model = ChatGoogleGenerativeAI(model="gemini-2.0-pro-exp-02-05", temperature=0.3)
+        chat_model = ChatGoogleGenerativeAI(model="gemini-1.5-pro", temperature=0.3)
         prompt = PromptTemplate(
             input_variables=["context", "question"],
             template="""
